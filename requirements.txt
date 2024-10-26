@@ -1,0 +1,9 @@
+fastapi[standard]
+aiohttp
+pytest
+python-dotenv
+httpx
+gunicorn
+
+
+
