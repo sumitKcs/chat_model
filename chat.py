@@ -59,11 +59,5 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_text(response_content)
                 await asyncio.sleep(0.1)
         
-            # if response_content:
-            #     # Simulate streaming by sending chunks of the response
-            #     for i in range(0, len(response_content), 50):
-            #         chunk = response_content[i:i+50]
-            #         await websocket.send_text(chunk)
-            #         await asyncio.sleep(0.1)  # Adjust the delay as needed
     except WebSocketDisconnect:
         print("Client disconnected")
