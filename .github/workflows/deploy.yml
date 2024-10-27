@@ -1,0 +1,117 @@
+name: Deploy Blue-Green
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Clean up previous content
+        run: |
+          rm -rf ./*
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Add environment variables to .env file
+        run: |
+          touch .env
+          echo "CALLBACK_URL=\"${{ secrets.CALLBACK_URL }}\"" >> .env
+          echo "DB_HOST=\"${{ secrets.DB_HOST }}\"" >> .env
+          echo "DB_PORT=\"${{ secrets.DB_PORT }}\"" >> .env
+          echo "DB_NAME=\"${{ secrets.DB_NAME }}\"" >> .env
+          echo "DB_USER=\"${{ secrets.DB_USER }}\"" >> .env
+          echo "DB_PASSWORD=\"${{ secrets.DB_PASSWORD }}\"" >> .env
+          cat .env
+
+      - name: Deploy to blue or green
+        run: |
+          BLUE_PATH=/home/rootadmin/projects/python/aichat/blue/
+          GREEN_PATH=/home/rootadmin/projects/python/aichat/green/
+          BLUE_PORT=9218
+          GREEN_PORT=9219
+
+          CURRENT_ENV=$(cat /home/rootadmin/projects/python/aichat/.active-deployment || echo "blue")
+
+          if [ "$CURRENT_ENV" == "green" ]; then
+            # Deploy to Blue
+            
+            # Remove old content from blue directory
+            sudo rm -rf ${BLUE_PATH}*
+
+            # Use rsync to copy files to blue directory and set ownership to www-data
+            sudo rsync -av --exclude='.git' ./ ${BLUE_PATH}
+
+            # Deploy the blue environment
+            echo "deploying blue"
+            echo "cd ${BLUE_PATH}"
+            cd ${BLUE_PATH}
+            # create a virtual environment
+            echo "creating virtual environment"
+            python3 -m venv .venv
+            # activate the virtual environment
+            source .venv/bin/activate
+            # install dependencies
+            pip install -r requirements.txt
+            echo "starting gunicorn server"
+
+            # stop green server
+            echo "stopping green server"
+            sudo supervisorctl stop aichat_green
+
+            # start blue server
+            sudo supervisorctl start aichat_blue
+
+            # Mark blue as active
+            echo "marking blue as active"
+            echo "blue" > /home/rootadmin/projects/python/aichat/.active-deployment
+
+            # Update Apache config to point to Blue ($BLUE_PORT)
+            echo "updating apache config to point to blue"
+            sudo a2dissite aichat_green
+            sudo a2ensite aichat_blue
+            
+          else
+            # Deploy to Green
+            
+            # Remove old content from green directory
+            sudo rm -rf ${GREEN_PATH}*
+
+            # Use rsync to copy files to green directory and set ownership to www-data
+            sudo rsync -av --exclude='.git' ./ ${GREEN_PATH}
+
+            # Deploy the green environment
+            echo "deploying green"
+            echo "cd ${GREEN_PATH}"
+            cd ${GREEN_PATH}
+            # create a virtual environment
+            echo "creating virtual environment"
+            python3 -m venv .venv
+            # activate the virtual environment
+            source .venv/bin/activate
+            # install dependencies
+            pip install -r requirements.txt
+            echo "starting gunicorn server"
+            sudo supervisorctl start aichat_green
+
+            # stop blue server
+            echo "stopping blue server"
+            sudo supervisorctl stop aichat_blue
+
+            # Mark green as active
+            echo "marking green as active"
+            echo "green" > /home/rootadmin/projects/python/aichat/.active-deployment
+
+            # Update Apache config to point to Blue ($GREEN_PORT)
+            echo "updating apache config to point to green"
+            sudo a2dissite aichat_blue
+            sudo a2ensite aichat_green
+          fi
+
+
+      - name: Restart Apache to apply the changes
+        run: sudo systemctl restart apache2
